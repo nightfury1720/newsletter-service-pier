@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/app.js",
+    "start": "node ./dist/app.js",
     "dev": "tsx watch src/app.ts",
     "test:data": "tsx src/utils/testData.ts",
     "test:data:simple": "tsx src/utils/testDataSimple.ts",

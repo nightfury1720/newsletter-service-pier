@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: newsletter-service
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: node ./dist/app.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+

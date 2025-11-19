@@ -1,7 +1,7 @@
 {
-  "name": "newsletter-service-backend",
+  "name": "newsletter-service",
   "version": "1.0.0",
-  "description": "Newsletter Service Backend with Queue and Connection Pooling",
+  "description": "Newsletter Service with Queue and Connection Pooling",
   "main": "dist/app.js",
   "type": "module",
   "scripts": {

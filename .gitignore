@@ -1,0 +1,24 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+logs/
+*.log
+.DS_Store
+dist/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Compiled JavaScript files in src (should only be in dist/)
+src/**/*.js
+src/**/*.js.map
+
+/src/generated/prisma
+drizzle/
+

@@ -3,6 +3,7 @@ import subscriberRoutes from './subscriberRoutes.js';
 import topicRoutes from './topicRoutes.js';
 import contentRoutes from './contentRoutes.js';
 import emailLogRoutes from './emailLogRoutes.js';
+import logRoutes from './logRoutes.js';
 import { getHealth } from '../controllers/healthController.js';
 
 const router = express.Router();
@@ -13,6 +14,7 @@ router.use('/subscribers', subscriberRoutes);
 router.use('/topics', topicRoutes);
 router.use('/content', contentRoutes);
 router.use('/email-logs', emailLogRoutes);
+router.use('/logs', logRoutes);
 
 export default router;
 

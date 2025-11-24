@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { eq, desc, and, count } from 'drizzle-orm';
+import { eq, desc, and, count, SQL } from 'drizzle-orm';
 import db from '../config/database.js';
 import { content, topics, emailLogs, subscriptions, subscribers } from '../models/schema.js';
 import logger from '../config/logger.js';
@@ -72,7 +72,7 @@ export const getContent = async (req: Request, res: Response): Promise<void> => 
   const { topicId, status, limit = '50', offset = '0' } = req.query;
 
   try {
-    const conditions = [];
+    const conditions: SQL<unknown>[] = [];
     if (topicId) {
       conditions.push(eq(content.topic_id, parseInt(topicId as string)));
     }

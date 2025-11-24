@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "Node16",
     "lib": ["ES2022"],
-    "types": ["node"],
+    "types": ["node", "jest"],
     "moduleResolution": "node16",
     "rootDir": "./src",
     "outDir": "./dist",
@@ -19,9 +19,10 @@
     "noUnusedParameters": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "isolatedModules": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "src/utils/testData.ts", "src/utils/testDataSimple.ts"]
+  "exclude": ["node_modules", "dist", "src/utils/testData.ts", "src/utils/testDataSimple.ts"]
 }
 

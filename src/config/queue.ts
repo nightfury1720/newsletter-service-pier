@@ -47,6 +47,11 @@ const getRedisConfig = () => {
 
 const emailQueue = new Queue<EmailJobData>('email-queue', {
   ...getRedisConfig(),
+  settings: {
+    stalledInterval: 300000,
+    maxStalledCount: 1,
+    retryProcessDelay: 5000,
+  },
   defaultJobOptions: {
     attempts: 3,
     backoff: {

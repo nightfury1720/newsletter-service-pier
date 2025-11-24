@@ -1,3 +1,5 @@
+// This test file uses ONLY API calls for all data operations (topics, subscribers, content, subscriptions)
+// No direct database connections are used - all operations go through HTTP endpoints
 const BASE_URL = 'https://newsletter-service-pier.onrender.com';
 
 function getScheduledTimeForIST(hour: number, minute: number): string {
@@ -21,6 +23,11 @@ function getScheduledTimeForIST(hour: number, minute: number): string {
   }
   
   return utcTime.toISOString();
+}
+
+function getScheduledTimeForSpecificDateIST(year: number, month: number, day: number, hour: number, minute: number): string {
+  const istDateTime = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00+05:30`);
+  return istDateTime.toISOString();
 }
 
 async function makeRequest(method: string, endpoint: string, body?: any) {
@@ -55,6 +62,7 @@ describe('Content, Topic, and Subscribers Integration Test', () => {
     testSubscriberEmail,
     'test1@example.com',
     'test2@example.com',
+    'skd18@iitbbs.ac.in',
   ];
 
   test('should create a topic', async () => {
@@ -188,6 +196,83 @@ describe('Content, Topic, and Subscribers Integration Test', () => {
     expect(createdContent.topic_id).toBe(createdTopicId);
     expect(createdContent.topic_name).toBe('Test Technology News');
     expect(parseInt(createdContent.total_subscribers)).toBeGreaterThanOrEqual(testEmails.length);
+  });
+
+  test('should create and subscribe skd18@iitbbs.ac.in and schedule 10 tech newsletters', async () => {
+    const skdEmail = 'skd18@iitbbs.ac.in';
+    let skdSubscriberId: number;
+
+    const skdEmailIndex = testEmails.indexOf(skdEmail);
+    if (skdEmailIndex >= 0 && subscriberIds[skdEmailIndex]) {
+      skdSubscriberId = subscriberIds[skdEmailIndex];
+    } else {
+      const subscriberResponse = await makeRequest('POST', '/api/subscribers', { email: skdEmail });
+      expect(subscriberResponse.status).toBe(201);
+      expect(subscriberResponse.body).toHaveProperty('id');
+      skdSubscriberId = subscriberResponse.body.id;
+    }
+
+    const subscribeResponse = await makeRequest('POST', `/api/subscribers/${skdSubscriberId}/subscribe`, {
+      topicId: createdTopicId,
+    });
+    expect(subscribeResponse.status).toBe(201);
+    expect(subscribeResponse.body).toHaveProperty('subscriber_id', skdSubscriberId);
+    expect(subscribeResponse.body).toHaveProperty('topic_id', createdTopicId);
+
+    const techNewsletters = [
+      { title: 'AI Breakthrough: New Language Models Revolutionize Tech', body: 'Recent advancements in artificial intelligence are transforming how we interact with technology. Large language models are now capable of understanding context and generating human-like responses.' },
+      { title: 'Cloud Computing Trends: Multi-Cloud Strategies Dominate', body: 'Enterprises are increasingly adopting multi-cloud architectures to avoid vendor lock-in and optimize costs. This trend is reshaping the cloud computing landscape.' },
+      { title: 'Cybersecurity Alert: Zero-Day Vulnerabilities Discovered', body: 'Security researchers have identified critical vulnerabilities in popular software. Organizations are urged to update their systems immediately to prevent potential breaches.' },
+      { title: 'Quantum Computing Milestone: Error Correction Achieved', body: 'Scientists have made significant progress in quantum error correction, bringing practical quantum computing one step closer to reality. This breakthrough could revolutionize cryptography and drug discovery.' },
+      { title: '5G Expansion: Next-Gen Networks Roll Out Globally', body: 'Telecom companies worldwide are expanding 5G infrastructure, promising faster speeds and lower latency. This expansion is enabling new applications in IoT and autonomous vehicles.' },
+      { title: 'Blockchain Innovation: Smart Contracts Gain Traction', body: 'Smart contracts are becoming mainstream in various industries, from finance to supply chain management. This technology promises to automate complex business processes.' },
+      { title: 'Edge Computing: Processing Data Closer to Users', body: 'Edge computing is reducing latency by processing data near its source. This technology is crucial for real-time applications like autonomous driving and augmented reality.' },
+      { title: 'DevOps Evolution: GitOps Practices Transform Deployment', body: 'GitOps is revolutionizing how teams manage infrastructure and deployments. This approach brings version control and automation to operations workflows.' },
+      { title: 'Machine Learning in Healthcare: AI Diagnoses Improve', body: 'Machine learning algorithms are assisting doctors in diagnosing diseases with higher accuracy. These AI systems are analyzing medical images and patient data to detect conditions earlier.' },
+      { title: 'Sustainable Tech: Green Computing Initiatives Accelerate', body: 'Technology companies are investing heavily in sustainable practices. From renewable energy data centers to energy-efficient processors, the industry is going green.' },
+    ];
+
+    const startDate = new Date();
+    const targetYear = startDate.getFullYear();
+    const targetMonth = 11;
+    const targetDay = 25;
+    const startHour = 2;
+    const startMinute = 30;
+
+    const createdNewsletterIds: number[] = [];
+
+    for (let i = 0; i < 10; i++) {
+      const minuteOffset = i * 10;
+      const scheduledMinute = startMinute + minuteOffset;
+      const scheduledHour = startHour + Math.floor(scheduledMinute / 60);
+      const finalMinute = scheduledMinute % 60;
+
+      const scheduledTime = getScheduledTimeForSpecificDateIST(
+        targetYear,
+        targetMonth,
+        targetDay,
+        scheduledHour,
+        finalMinute
+      );
+
+      const response = await makeRequest('POST', '/api/content', {
+        topicId: createdTopicId,
+        title: techNewsletters[i].title,
+        body: techNewsletters[i].body,
+        scheduledTime: scheduledTime,
+      });
+
+      expect(response.status).toBe(201);
+      expect(response.body).toHaveProperty('id');
+      expect(response.body.topic_id).toBe(createdTopicId);
+      expect(response.body.title).toBe(techNewsletters[i].title);
+      expect(response.body.body).toBe(techNewsletters[i].body);
+      expect(response.body.is_sent).toBe(false);
+      expect(response.body.status).toBe('pending');
+      createdNewsletterIds.push(response.body.id);
+    }
+
+    expect(createdNewsletterIds.length).toBe(10);
   });
 });
 

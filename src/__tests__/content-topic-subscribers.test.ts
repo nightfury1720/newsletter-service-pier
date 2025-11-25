@@ -2,29 +2,6 @@
 // No direct database connections are used - all operations go through HTTP endpoints
 const BASE_URL = 'https://newsletter-service-pier.onrender.com';
 
-function getScheduledTimeForIST(hour: number, minute: number): string {
-  const now = new Date();
-  const istFormatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  
-  const istDateStr = istFormatter.format(now);
-  const [year, month, day] = istDateStr.split('-').map(Number);
-  
-  const istDateTime = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00+05:30`);
-  
-  let utcTime = new Date(istDateTime);
-  
-  if (utcTime <= now) {
-    utcTime = new Date(utcTime.getTime() + 24 * 60 * 60 * 1000);
-  }
-  
-  return utcTime.toISOString();
-}
-
 function getScheduledTimeForSpecificDateIST(year: number, month: number, day: number, hour: number, minute: number): string {
   const istDateTime = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00+05:30`);
   return istDateTime.toISOString();

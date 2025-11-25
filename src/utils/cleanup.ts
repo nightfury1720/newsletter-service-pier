@@ -1,41 +1,33 @@
 import 'dotenv/config';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres, { sql } from 'postgres';
-import * as schema from '../models/schema.js';
+import { sql } from 'drizzle-orm';
+import db from '../config/database.js';
+import { emailLogs, content, subscriptions, subscribers, topics } from '../models/schema.js';
 import emailQueue from '../config/queue.js';
 import logger from '../config/logger.js';
 
 async function cleanupDatabase() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL environment variable is required');
-  }
-
-  const connectionString = process.env.DATABASE_URL;
-  const client = postgres(connectionString, { max: 1 });
-  const db = drizzle(client, { schema });
-
   try {
     logger.info('Starting database cleanup...');
 
-    await client`TRUNCATE TABLE email_logs CASCADE`;
+    await db.delete(emailLogs);
     logger.info('Cleared email_logs table');
 
-    await client`TRUNCATE TABLE content CASCADE`;
+    await db.delete(content);
     logger.info('Cleared content table');
 
-    await client`TRUNCATE TABLE subscriptions CASCADE`;
+    await db.delete(subscriptions);
     logger.info('Cleared subscriptions table');
 
-    await client`TRUNCATE TABLE subscribers CASCADE`;
+    await db.delete(subscribers);
     logger.info('Cleared subscribers table');
 
-    await client`TRUNCATE TABLE topics CASCADE`;
+    await db.delete(topics);
     logger.info('Cleared topics table');
 
-    await client`ALTER SEQUENCE topics_id_seq RESTART WITH 1`;
-    await client`ALTER SEQUENCE subscribers_id_seq RESTART WITH 1`;
-    await client`ALTER SEQUENCE content_id_seq RESTART WITH 1`;
-    await client`ALTER SEQUENCE email_logs_id_seq RESTART WITH 1`;
+    await db.execute(sql`ALTER SEQUENCE topics_id_seq RESTART WITH 1`);
+    await db.execute(sql`ALTER SEQUENCE subscribers_id_seq RESTART WITH 1`);
+    await db.execute(sql`ALTER SEQUENCE content_id_seq RESTART WITH 1`);
+    await db.execute(sql`ALTER SEQUENCE email_logs_id_seq RESTART WITH 1`);
     logger.info('Reset all sequences');
 
     logger.info('Database cleanup completed successfully');
@@ -45,8 +37,6 @@ async function cleanupDatabase() {
       stack: (error as Error).stack,
     });
     throw error;
-  } finally {
-    await client.end();
   }
 }
 

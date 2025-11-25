@@ -11,7 +11,6 @@ const DELAY_BETWEEN_EMAILS = 1000 / EMAILS_PER_SECOND;
 
 class RateLimiter {
   private lastEmailTime: number = 0;
-  private lock: Promise<void> = Promise.resolve();
 
   async rateLimit(): Promise<void> {
     const now = Date.now();
@@ -27,10 +26,6 @@ class RateLimiter {
 }
 
 const rateLimiter = new RateLimiter();
-
-async function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 emailQueue.process('send-newsletter', 10, async (job) => {
   const { contentId, subscriberId, subscriberEmail, title, body } = job.data;

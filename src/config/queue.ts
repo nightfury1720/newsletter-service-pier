@@ -24,7 +24,7 @@ const getRedisConfig = () => {
           username: urlObj.username || undefined,
           tls: {},
           connectTimeout: parseInt(process.env.REDIS_CONNECT_TIMEOUT || '10000'),
-          lazyConnect: true,
+          lazyConnect: false,
         },
       };
     }
@@ -41,7 +41,7 @@ const getRedisConfig = () => {
       port: parseInt(process.env.REDIS_PORT || '6379'),
       password: process.env.REDIS_PASSWORD || undefined,
       connectTimeout: parseInt(process.env.REDIS_CONNECT_TIMEOUT || '10000'),
-      lazyConnect: true,
+      lazyConnect: false,
       ...(useTls && {
         tls: {},
       }),
@@ -75,8 +75,95 @@ const emailQueue = new Queue<EmailJobData>('email-queue', {
   },
 });
 
+let connectionRetryCount = 0;
+const MAX_RETRY_ATTEMPTS = 10;
+const RETRY_DELAY_BASE = 2000;
+
+async function checkRedisConnection(): Promise<boolean> {
+  try {
+    const client = emailQueue.client;
+    if (!client) {
+      return false;
+    }
+    const status = client.status;
+    return status === 'ready' || status === 'connect';
+  } catch (error) {
+    return false;
+  }
+}
+
+async function attemptRedisConnection(): Promise<void> {
+  const isConnected = await checkRedisConnection();
+  
+  if (!isConnected) {
+    connectionRetryCount++;
+    
+    if (connectionRetryCount <= MAX_RETRY_ATTEMPTS) {
+      const retryDelay = RETRY_DELAY_BASE * Math.pow(2, Math.min(connectionRetryCount - 1, 5));
+      
+      logger.warn('Redis not connected, attempting to reconnect', {
+        attempt: connectionRetryCount,
+        maxAttempts: MAX_RETRY_ATTEMPTS,
+        retryDelayMs: retryDelay,
+        redisUrl: process.env.REDIS_URL ? 'configured' : 'not configured',
+      });
+      
+      try {
+        const client = emailQueue.client;
+        if (client) {
+          if (client.status === 'end' || client.status === 'close') {
+            if (typeof client.connect === 'function') {
+              await client.connect();
+            }
+          } else {
+            await client.ping();
+          }
+        } else {
+          logger.warn('Redis client not available, Bull will attempt reconnection automatically');
+        }
+      } catch (error) {
+        logger.error('Redis reconnection attempt failed', {
+          attempt: connectionRetryCount,
+          error: (error as Error).message,
+          willRetry: connectionRetryCount < MAX_RETRY_ATTEMPTS,
+        });
+        
+        if (connectionRetryCount < MAX_RETRY_ATTEMPTS) {
+          setTimeout(() => attemptRedisConnection(), retryDelay);
+        } else {
+          logger.error('Max Redis reconnection attempts reached', {
+            totalAttempts: connectionRetryCount,
+            warning: 'Bull will continue attempting automatic reconnection',
+          });
+        }
+      }
+    }
+  } else {
+    if (connectionRetryCount > 0) {
+      logger.info('Redis connection restored', {
+        totalRetries: connectionRetryCount,
+      });
+      connectionRetryCount = 0;
+    }
+  }
+}
+
+emailQueue.on('ready', () => {
+  connectionRetryCount = 0;
+  logger.info('Queue connected to Redis and ready', {
+    queueName: 'email-queue',
+    redisUrl: process.env.REDIS_URL ? 'configured' : 'not configured',
+  });
+});
+
 emailQueue.on('error', (error: Error) => {
-  logger.error('Queue error', { error: error.message });
+  logger.error('Queue error', {
+    error: error.message,
+    stack: error.stack,
+    redisUrl: process.env.REDIS_URL ? 'configured' : 'not configured',
+  });
+  
+  attemptRedisConnection();
 });
 
 emailQueue.on('waiting', (jobId: string | number) => {
@@ -120,6 +207,26 @@ emailQueue.on('stalled', (job) => {
     subscriberId: job.data.subscriberId,
   });
 });
+
+setTimeout(async () => {
+  const isConnected = await checkRedisConnection();
+  if (!isConnected) {
+    logger.warn('Redis connection check failed on startup', {
+      willAttemptReconnect: true,
+    });
+    attemptRedisConnection();
+  }
+}, 3000);
+
+setInterval(async () => {
+  const isConnected = await checkRedisConnection();
+  if (!isConnected) {
+    logger.warn('Periodic Redis connection check failed', {
+      willAttemptReconnect: true,
+    });
+    attemptRedisConnection();
+  }
+}, 30000);
 
 export default emailQueue;
 

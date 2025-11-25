@@ -1,6 +1,6 @@
 // This test file uses ONLY API calls for all data operations (topics, subscribers, content, subscriptions)
 // No direct database connections are used - all operations go through HTTP endpoints
-const BASE_URL = 'https://newsletter-service-pier.onrender.com';
+const BASE_URL = 'http://localhost:8000';
 
 function getScheduledTimeForSpecificDateIST(year: number, month: number, day: number, hour: number, minute: number): string {
   const istDateTime = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00+05:30`);
@@ -152,7 +152,7 @@ describe('Content, Topic, and Subscribers Integration Test', () => {
     expect([200, 201]).toContain(surajTopic3Response.status);
   });
 
-  test('should schedule 3 emails for each topic at 1:40 PM IST', async () => {
+  test('should schedule 3 emails for each topic at 2:43 PM IST', async () => {
     const now = new Date();
     const istFormatter = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Kolkata',
@@ -164,7 +164,7 @@ describe('Content, Topic, and Subscribers Integration Test', () => {
     const istDateStr = istFormatter.format(now);
     const [year, month, day] = istDateStr.split('-').map(Number);
     
-    const scheduledTime = getScheduledTimeForSpecificDateIST(year, month, day, 13, 40);
+    const scheduledTime = getScheduledTimeForSpecificDateIST(year, month, day, 14, 43);
 
     const topics = [
       { id: topic1Id, name: 'topic_1', emails: [

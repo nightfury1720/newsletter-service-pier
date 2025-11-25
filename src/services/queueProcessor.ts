@@ -175,9 +175,113 @@ emailQueue.process('send-newsletter', 10, async (job) => {
   }
 });
 
+let isQueueReady = false;
+let connectionCheckInterval: NodeJS.Timeout | null = null;
+
+async function checkQueueConnection(): Promise<boolean> {
+  try {
+    const client = emailQueue.client;
+    if (!client) {
+      logger.warn('Queue processor: Redis client not available');
+      return false;
+    }
+    
+    const status = client.status;
+    const isReady = status === 'ready' || status === 'connect';
+    
+    if (!isReady && isQueueReady) {
+      logger.error('Queue processor: Redis connection lost', {
+        previousStatus: 'ready',
+        currentStatus: status,
+      });
+      isQueueReady = false;
+    }
+    
+    return isReady;
+  } catch (error) {
+    logger.error('Queue processor: Error checking Redis connection', {
+      error: (error as Error).message,
+    });
+    return false;
+  }
+}
+
+emailQueue.on('ready', () => {
+  isQueueReady = true;
+  logger.info('Queue processor connected to Redis and ready to process jobs', {
+    queueName: 'email-queue',
+    concurrency: 10,
+    emailsPerSecond: EMAILS_PER_SECOND,
+  });
+});
+
+emailQueue.on('error', (error: Error) => {
+  isQueueReady = false;
+  logger.error('Queue processor Redis connection error', {
+    error: error.message,
+    stack: error.stack,
+    redisUrl: process.env.REDIS_URL ? 'configured' : 'not configured',
+  });
+});
+
+emailQueue.on('close', () => {
+  isQueueReady = false;
+  logger.warn('Queue processor: Redis connection closed');
+});
+
+connectionCheckInterval = setInterval(async () => {
+  const isConnected = await checkQueueConnection();
+  
+  if (!isConnected && !isQueueReady) {
+    logger.warn('Queue processor: Redis not connected, jobs may not be processed', {
+      willRetry: true,
+    });
+  }
+}, 30000);
+
 logger.info('Queue processor initialized', {
   concurrency: 10,
   emailsPerSecond: EMAILS_PER_SECOND,
+  jobName: 'send-newsletter',
 });
+
+setTimeout(async () => {
+  const isConnected = await checkQueueConnection();
+  if (!isConnected) {
+    logger.error('Queue processor: Initial Redis connection check failed', {
+      warning: 'Jobs may not be processed until connection is established',
+      redisUrl: process.env.REDIS_URL ? 'configured' : 'REDIS_URL not set',
+    });
+    
+    // Try to explicitly trigger connection
+    try {
+      const client = emailQueue.client;
+      if (client && typeof client.connect === 'function') {
+        await client.connect();
+        logger.info('Queue processor: Explicitly triggered Redis connection');
+      }
+    } catch (connectError) {
+      logger.error('Queue processor: Failed to trigger explicit connection', {
+        error: (connectError as Error).message,
+      });
+    }
+  } else {
+    logger.info('Queue processor: Redis connection verified, ready to process jobs');
+    
+    // Check if there are waiting jobs that need processing
+    try {
+      const waiting = await emailQueue.getWaiting();
+      if (waiting.length > 0) {
+        logger.info('Queue processor: Found waiting jobs that will be processed', {
+          waitingCount: waiting.length,
+        });
+      }
+    } catch (error) {
+      logger.warn('Queue processor: Could not check waiting jobs', {
+        error: (error as Error).message,
+      });
+    }
+  }
+}, 5000);
 
 export default emailQueue;

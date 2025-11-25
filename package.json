@@ -18,7 +18,8 @@
     "db:migrate": "tsx src/utils/migrate.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:seed": "tsx src/utils/seedMockData.ts"
+    "db:seed": "tsx src/utils/seedMockData.ts",
+    "cleanup": "tsx src/utils/cleanup.ts"
   },
   "keywords": [
     "newsletter",

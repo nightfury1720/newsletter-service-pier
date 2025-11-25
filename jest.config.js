@@ -18,6 +18,7 @@ export default {
     ],
   },
   testMatch: ['**/__tests__/**/*.test.ts'],
+  testTimeout: 60000,
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',

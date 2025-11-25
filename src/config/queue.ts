@@ -23,6 +23,8 @@ const getRedisConfig = () => {
           password: urlObj.password || undefined,
           username: urlObj.username || undefined,
           tls: {},
+          connectTimeout: parseInt(process.env.REDIS_CONNECT_TIMEOUT || '10000'),
+          lazyConnect: true,
         },
       };
     }
@@ -38,6 +40,8 @@ const getRedisConfig = () => {
       host: process.env.REDIS_HOST || 'localhost',
       port: parseInt(process.env.REDIS_PORT || '6379'),
       password: process.env.REDIS_PASSWORD || undefined,
+      connectTimeout: parseInt(process.env.REDIS_CONNECT_TIMEOUT || '10000'),
+      lazyConnect: true,
       ...(useTls && {
         tls: {},
       }),
@@ -51,9 +55,12 @@ const emailQueue = new Queue<EmailJobData>('email-queue', {
     stalledInterval: 300000,
     maxStalledCount: 1,
     retryProcessDelay: 5000,
+    lockDuration: 300000,
+    lockRenewTime: 150000,
   },
   defaultJobOptions: {
     attempts: 3,
+    timeout: 120000,
     backoff: {
       type: 'exponential',
       delay: 2000,

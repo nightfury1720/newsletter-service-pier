@@ -16,6 +16,10 @@ class EmailService {
 
   private initializeTransporter(): void {
     try {
+      const connectionTimeout = parseInt(process.env.SMTP_CONNECTION_TIMEOUT || '30000');
+      const socketTimeout = parseInt(process.env.SMTP_SOCKET_TIMEOUT || '60000');
+      const maxConnections = parseInt(process.env.SMTP_MAX_CONNECTIONS || '3');
+      
       this.transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST || 'smtp.gmail.com',
         port: parseInt(process.env.SMTP_PORT || '587'),
@@ -24,11 +28,19 @@ class EmailService {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASSWORD,
         },
+        connectionTimeout,
+        socketTimeout,
+        greetingTimeout: connectionTimeout,
+        pool: true,
+        maxConnections,
+        maxMessages: 50,
       });
 
       logger.info('Email transporter initialized', {
         host: process.env.SMTP_HOST,
         port: process.env.SMTP_PORT,
+        connectionTimeout,
+        socketTimeout,
       });
     } catch (error) {
       logger.error('Failed to initialize email transporter', {
@@ -66,7 +78,13 @@ class EmailService {
     };
 
     try {
-      const result = await this.transporter.sendMail(emailData);
+      const sendTimeout = parseInt(process.env.SMTP_SEND_TIMEOUT || '60000');
+      const result = await Promise.race([
+        this.transporter.sendMail(emailData),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Connection timeout')), sendTimeout)
+        ),
+      ]);
 
       logger.info('Email sent successfully', {
         to,
@@ -80,13 +98,14 @@ class EmailService {
         response: result.response,
       };
     } catch (error) {
+      const errorMessage = (error as Error).message;
       logger.error('Failed to send email', {
         to,
         subject,
-        error: (error as Error).message,
+        error: errorMessage,
       });
 
-      throw error;
+      throw new Error(errorMessage.includes('timeout') ? 'Connection timeout' : errorMessage);
     }
   }
 

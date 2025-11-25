@@ -9,22 +9,27 @@ import logger from '../config/logger.js';
 const EMAILS_PER_SECOND = parseInt(process.env.EMAILS_PER_SECOND || '10');
 const DELAY_BETWEEN_EMAILS = 1000 / EMAILS_PER_SECOND;
 
-let lastEmailTime = 0;
+class RateLimiter {
+  private lastEmailTime: number = 0;
+  private lock: Promise<void> = Promise.resolve();
+
+  async rateLimit(): Promise<void> {
+    const now = Date.now();
+    const timeSinceLastEmail = now - this.lastEmailTime;
+
+    if (timeSinceLastEmail < DELAY_BETWEEN_EMAILS) {
+      const waitTime = DELAY_BETWEEN_EMAILS - timeSinceLastEmail;
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+
+    this.lastEmailTime = Date.now();
+  }
+}
+
+const rateLimiter = new RateLimiter();
 
 async function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function rateLimit(): Promise<void> {
-  const now = Date.now();
-  const timeSinceLastEmail = now - lastEmailTime;
-
-  if (timeSinceLastEmail < DELAY_BETWEEN_EMAILS) {
-    const waitTime = DELAY_BETWEEN_EMAILS - timeSinceLastEmail;
-    await delay(waitTime);
-  }
-
-  lastEmailTime = Date.now();
 }
 
 emailQueue.process('send-newsletter', 10, async (job) => {
@@ -32,7 +37,7 @@ emailQueue.process('send-newsletter', 10, async (job) => {
   const startTime = Date.now();
 
   try {
-    await rateLimit();
+    await rateLimiter.rateLimit();
 
     logger.info('Processing email job', {
       jobId: job.id,
@@ -75,55 +80,59 @@ emailQueue.process('send-newsletter', 10, async (job) => {
       processingTimeMs: processingTime,
     });
 
-    const [contentItem] = await db.select({ topic_id: content.topic_id })
-      .from(content)
-      .where(eq(content.id, contentId))
-      .limit(1);
+    const shouldCheckCompletion = Math.random() < 0.1 || job.attemptsMade === 0;
+    
+    if (shouldCheckCompletion) {
+      const [contentItem] = await db.select({ topic_id: content.topic_id })
+        .from(content)
+        .where(eq(content.id, contentId))
+        .limit(1);
 
-    if (contentItem) {
-      const activeSubscriptions = await db
-        .select()
-        .from(subscriptions)
-        .innerJoin(subscribers, eq(subscriptions.subscriber_id, subscribers.id))
-        .where(and(
-          eq(subscriptions.topic_id, contentItem.topic_id),
-          eq(subscribers.is_active, true)
-        ));
+      if (contentItem) {
+        const [sentCountResult, activeSubscriptions] = await Promise.all([
+          db
+            .select({ count: count() })
+            .from(emailLogs)
+            .where(and(
+              eq(emailLogs.content_id, contentId),
+              eq(emailLogs.status, 'sent')
+            )),
+          db
+            .select()
+            .from(subscriptions)
+            .innerJoin(subscribers, eq(subscriptions.subscriber_id, subscribers.id))
+            .where(and(
+              eq(subscriptions.topic_id, contentItem.topic_id),
+              eq(subscribers.is_active, true)
+            )),
+        ]);
 
-      const totalSubscribers = activeSubscriptions.length;
+        const sentCount = sentCountResult[0]?.count || 0;
+        const totalSubscribers = activeSubscriptions.length;
 
-      const [sentCountResult] = await db
-        .select({ count: count() })
-        .from(emailLogs)
-        .where(and(
-          eq(emailLogs.content_id, contentId),
-          eq(emailLogs.status, 'sent')
-        ));
-
-      const sentCount = sentCountResult?.count || 0;
-
-      logger.info('Email progress for content', {
-        contentId,
-        sentCount,
-        totalSubscribers,
-        remaining: totalSubscribers - sentCount,
-        progressPercent: totalSubscribers > 0 ? Math.round((sentCount / totalSubscribers) * 100) : 0,
-      });
-
-      if (sentCount > 0 && totalSubscribers > 0 && sentCount >= totalSubscribers) {
-        await db.update(content)
-          .set({
-            is_sent: true,
-            status: 'sent',
-            sent_at: new Date(),
-          })
-          .where(eq(content.id, contentId));
-
-        logger.info('All emails sent for content - marking as complete', {
+        logger.info('Email progress for content', {
           contentId,
-          totalSent: sentCount,
+          sentCount,
           totalSubscribers,
+          remaining: totalSubscribers - sentCount,
+          progressPercent: totalSubscribers > 0 ? Math.round((sentCount / totalSubscribers) * 100) : 0,
         });
+
+        if (sentCount > 0 && totalSubscribers > 0 && sentCount >= totalSubscribers) {
+          await db.update(content)
+            .set({
+              is_sent: true,
+              status: 'sent',
+              sent_at: new Date(),
+            })
+            .where(eq(content.id, contentId));
+
+          logger.info('All emails sent for content - marking as complete', {
+            contentId,
+            totalSent: sentCount,
+            totalSubscribers,
+          });
+        }
       }
     }
 

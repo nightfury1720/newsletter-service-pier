@@ -123,34 +123,53 @@ class SchedulerService {
           subscriberEmails: subscriptionData.map(s => s.subscriber?.email).filter(Boolean),
         });
 
-        let queuedCount = 0;
-        for (const subscription of subscriptionData) {
-          const subscriber = subscription.subscriber;
-          if (!subscriber) continue;
-
-          await emailQueue.add(
-            'send-newsletter',
-            {
-              contentId: contentItem.id,
-              subscriberId: subscriber.id,
-              subscriberEmail: subscriber.email,
-              title: contentItem.title || 'Newsletter',
-              body: contentItem.body,
-            },
-            {
-              attempts: 3,
-              backoff: {
-                type: 'exponential',
-                delay: 2000,
+        const queuePromises = subscriptionData
+          .filter(subscription => subscription.subscriber)
+          .map(subscription => {
+            const subscriber = subscription.subscriber!;
+            return emailQueue.add(
+              'send-newsletter',
+              {
+                contentId: contentItem.id,
+                subscriberId: subscriber.id,
+                subscriberEmail: subscriber.email,
+                title: contentItem.title || 'Newsletter',
+                body: contentItem.body,
               },
-            }
-          );
-          queuedCount++;
+              {
+                attempts: 3,
+                backoff: {
+                  type: 'exponential',
+                  delay: 2000,
+                },
+              }
+            ).catch(error => {
+              logger.error('Failed to add email job to queue', {
+                contentId: contentItem.id,
+                subscriberId: subscriber.id,
+                subscriberEmail: subscriber.email,
+                error: (error as Error).message,
+              });
+              return null;
+            });
+          });
+
+        const results = await Promise.allSettled(queuePromises);
+        const queuedCount = results.filter(r => r.status === 'fulfilled' && r.value !== null).length;
+        const failedCount = results.length - queuedCount;
+
+        if (failedCount > 0) {
+          logger.warn('Some emails failed to queue', {
+            contentId: contentItem.id,
+            failedCount,
+            totalCount: subscriptionData.length,
+          });
         }
 
         logger.info('All emails queued for content', {
           contentId: contentItem.id,
           queuedCount,
+          failedCount,
           totalSubscribers: subscriptionData.length,
         });
       }

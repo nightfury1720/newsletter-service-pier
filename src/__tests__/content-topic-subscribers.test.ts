@@ -67,24 +67,48 @@ async function makeRequest(method: string, endpoint: string, body?: any, timeout
 }
 
 describe('Content, Topic, and Subscribers Integration Test', () => {
-  let createdTopicId: number;
+  let topic1Id: number;
+  let topic2Id: number;
+  let topic3Id: number;
   let skdSubscriberId: number;
   let surajSubscriberId: number;
   const timestamp = Date.now();
-  const testTopicName = `Test Technology News ${timestamp}`;
   const skdEmail = 'skd18@iitbbs.ac.in';
   const surajEmail = 'surajguava@gmail.com';
 
-  test('should create a topic', async () => {
-    const response = await makeRequest('POST', '/api/topics', {
-      name: testTopicName,
-      description: 'Latest technology updates and news',
-    });
+  test('should clear all existing data from database and queue', async () => {
+    try {
+      const contentResponse = await makeRequest('GET', '/api/content');
+      if (contentResponse.body && Array.isArray(contentResponse.body)) {
+        for (const content of contentResponse.body) {
+          await makeRequest('DELETE', `/api/content/${content.id}`).catch(() => {});
+        }
+      }
+    } catch (error) {
+      // Ignore errors if no content exists
+    }
 
-    expect(response.status).toBe(201);
-    expect(response.body).toHaveProperty('id');
-    expect(response.body.name).toBe(testTopicName);
-    createdTopicId = response.body.id;
+    try {
+      const topicsResponse = await makeRequest('GET', '/api/topics');
+      if (topicsResponse.body && Array.isArray(topicsResponse.body)) {
+        for (const topic of topicsResponse.body) {
+          await makeRequest('DELETE', `/api/topics/${topic.id}`).catch(() => {});
+        }
+      }
+    } catch (error) {
+      // Ignore errors if no topics exist
+    }
+
+    try {
+      const subscribersResponse = await makeRequest('GET', '/api/subscribers');
+      if (subscribersResponse.body && Array.isArray(subscribersResponse.body)) {
+        for (const subscriber of subscribersResponse.body) {
+          await makeRequest('DELETE', `/api/subscribers/${subscriber.id}`).catch(() => {});
+        }
+      }
+    } catch (error) {
+      // Ignore errors if no subscribers exist
+    }
   });
 
   test('should create subscribers', async () => {
@@ -101,65 +125,104 @@ describe('Content, Topic, and Subscribers Integration Test', () => {
     surajSubscriberId = surajResponse.body.id;
   });
 
-  test('should subscribe subscribers to topic', async () => {
-    const skdSubscribeResponse = await makeRequest('POST', `/api/subscribers/${skdSubscriberId}/subscribe`, {
-      topicId: createdTopicId,
+  test('should create 3 topics: topic_1 (only for skd18), topic_2 (only for surajguava), topic_3 (for both)', async () => {
+    const topic1Response = await makeRequest('POST', '/api/topics', {
+      name: `topic_1_${timestamp}`,
+      description: 'Topic 1 - Only for skd18',
     });
-    expect([200, 201]).toContain(skdSubscribeResponse.status);
+    expect(topic1Response.status).toBe(201);
+    expect(topic1Response.body).toHaveProperty('id');
+    topic1Id = topic1Response.body.id;
 
-    const surajSubscribeResponse = await makeRequest('POST', `/api/subscribers/${surajSubscriberId}/subscribe`, {
-      topicId: createdTopicId,
+    const topic2Response = await makeRequest('POST', '/api/topics', {
+      name: `topic_2_${timestamp}`,
+      description: 'Topic 2 - Only for surajguava',
     });
-    expect([200, 201]).toContain(surajSubscribeResponse.status);
+    expect(topic2Response.status).toBe(201);
+    expect(topic2Response.body).toHaveProperty('id');
+    topic2Id = topic2Response.body.id;
+
+    const topic3Response = await makeRequest('POST', '/api/topics', {
+      name: `topic_3_${timestamp}`,
+      description: 'Topic 3 - For both subscribers',
+    });
+    expect(topic3Response.status).toBe(201);
+    expect(topic3Response.body).toHaveProperty('id');
+    topic3Id = topic3Response.body.id;
   });
 
-  test('should schedule emails from 1:10 PM IST for both skd18@iitbbs.ac.in and surajguava@gmail.com in parallel', async () => {
-    const targetYear = 2025;
-    const targetMonth = 11;
-    const targetDay = 25;
-    const startHour = 13;
-    const startMinute = 10;
+  test('should subscribe skd18 to topic_1 and topic_3', async () => {
+    const skdTopic1Response = await makeRequest('POST', `/api/subscribers/${skdSubscriberId}/subscribe`, {
+      topicId: topic1Id,
+    });
+    expect([200, 201]).toContain(skdTopic1Response.status);
 
-    const emails = [
-      { title: 'Newsletter Email 1', body: 'This is the first newsletter email sent to both subscribers in parallel' },
-      { title: 'Newsletter Email 2', body: 'This is the second newsletter email sent to both subscribers in parallel' },
-      { title: 'Newsletter Email 3', body: 'This is the third newsletter email sent to both subscribers in parallel' },
-      { title: 'Newsletter Email 4', body: 'This is the fourth newsletter email sent to both subscribers in parallel' },
-      { title: 'Newsletter Email 5', body: 'This is the fifth newsletter email sent to both subscribers in parallel' },
+    const skdTopic3Response = await makeRequest('POST', `/api/subscribers/${skdSubscriberId}/subscribe`, {
+      topicId: topic3Id,
+    });
+    expect([200, 201]).toContain(skdTopic3Response.status);
+  });
+
+  test('should subscribe surajguava to topic_2 and topic_3', async () => {
+    const surajTopic2Response = await makeRequest('POST', `/api/subscribers/${surajSubscriberId}/subscribe`, {
+      topicId: topic2Id,
+    });
+    expect([200, 201]).toContain(surajTopic2Response.status);
+
+    const surajTopic3Response = await makeRequest('POST', `/api/subscribers/${surajSubscriberId}/subscribe`, {
+      topicId: topic3Id,
+    });
+    expect([200, 201]).toContain(surajTopic3Response.status);
+  });
+
+  test('should schedule 3 emails for each topic at 1:40 PM IST', async () => {
+    const now = new Date();
+    const istFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    
+    const istDateStr = istFormatter.format(now);
+    const [year, month, day] = istDateStr.split('-').map(Number);
+    
+    const scheduledTime = getScheduledTimeForSpecificDateIST(year, month, day, 13, 40);
+
+    const topics = [
+      { id: topic1Id, name: 'topic_1', emails: [
+        { title: 'Topic 1 Email 1', body: 'First email for topic 1' },
+        { title: 'Topic 1 Email 2', body: 'Second email for topic 1' },
+        { title: 'Topic 1 Email 3', body: 'Third email for topic 1' },
+      ]},
+      { id: topic2Id, name: 'topic_2', emails: [
+        { title: 'Topic 2 Email 1', body: 'First email for topic 2' },
+        { title: 'Topic 2 Email 2', body: 'Second email for topic 2' },
+        { title: 'Topic 2 Email 3', body: 'Third email for topic 2' },
+      ]},
+      { id: topic3Id, name: 'topic_3', emails: [
+        { title: 'Topic 3 Email 1', body: 'First email for topic 3' },
+        { title: 'Topic 3 Email 2', body: 'Second email for topic 3' },
+        { title: 'Topic 3 Email 3', body: 'Third email for topic 3' },
+      ]},
     ];
 
-    const createdContentIds: number[] = [];
+    for (const topic of topics) {
+      for (const email of topic.emails) {
+        const response = await makeRequest('POST', '/api/content', {
+          topicId: topic.id,
+          title: email.title,
+          body: email.body,
+          scheduledTime: scheduledTime,
+        });
 
-    for (let i = 0; i < emails.length; i++) {
-      const minuteOffset = i * 2;
-      const scheduledMinute = startMinute + minuteOffset;
-      const scheduledHour = startHour + Math.floor(scheduledMinute / 60);
-      const finalMinute = scheduledMinute % 60;
-
-      const scheduledTime = getScheduledTimeForSpecificDateIST(
-        targetYear,
-        targetMonth,
-        targetDay,
-        scheduledHour,
-        finalMinute
-      );
-
-      const response = await makeRequest('POST', '/api/content', {
-        topicId: createdTopicId,
-        title: emails[i].title,
-        body: emails[i].body,
-        scheduledTime: scheduledTime,
-      });
-
-      expect(response.status).toBe(201);
-      expect(response.body).toHaveProperty('id');
-      expect(response.body.topic_id).toBe(createdTopicId);
-      expect(response.body.title).toBe(emails[i].title);
-      expect(response.body.is_sent).toBe(false);
-      expect(response.body.status).toBe('pending');
-      createdContentIds.push(response.body.id);
+        expect(response.status).toBe(201);
+        expect(response.body).toHaveProperty('id');
+        expect(response.body.topic_id).toBe(topic.id);
+        expect(response.body.title).toBe(email.title);
+        expect(response.body.is_sent).toBe(false);
+        expect(response.body.status).toBe('pending');
+      }
     }
-
-    expect(createdContentIds.length).toBe(5);
   });
 });

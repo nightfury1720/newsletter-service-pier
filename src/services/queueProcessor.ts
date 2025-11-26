@@ -176,7 +176,6 @@ emailQueue.process('send-newsletter', 10, async (job) => {
 });
 
 let isQueueReady = false;
-let connectionCheckInterval: NodeJS.Timeout | null = null;
 
 async function checkQueueConnection(): Promise<boolean> {
   try {
@@ -229,7 +228,7 @@ emailQueue.on('close', () => {
   logger.warn('Queue processor: Redis connection closed');
 });
 
-connectionCheckInterval = setInterval(async () => {
+setInterval(async () => {
   const isConnected = await checkQueueConnection();
   
   if (!isConnected && !isQueueReady) {
